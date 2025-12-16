@@ -320,7 +320,7 @@ sys_symlink(void)
     return -1;
   }
   
-  if(writei(ip, 0, (uint64)target, 0, strlen(target)) != strlen(target)){
+  if(writei(ip, 0, (uint64)target, 0, strlen(target) + 1) != strlen(target) + 1){
     iunlockput(ip);
     end_op();
     return -1;
