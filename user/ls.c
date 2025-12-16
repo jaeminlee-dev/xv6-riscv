@@ -31,8 +31,10 @@ ls(char *path)
   int fd;
   struct dirent de;
   struct stat st;
+  char target[512];
+  int n;
 
-  if((fd = open(path, O_RDONLY)) < 0){
+  if((fd = open(path, O_RDONLY | O_NOFOLLOW)) < 0){
     fprintf(2, "ls: cannot open %s\n", path);
     return;
   }
@@ -44,9 +46,21 @@ ls(char *path)
   }
 
   switch(st.type){
+  case T_SYMLINK:
+    n = read(fd, target, sizeof(target)-1);
+    if(n > 0) target[n] = 0; else target[0] = 0;
+    printf("%c%c %s -> %s %d %d %d\n",
+           (st.mode & M_READ) ? 'r' : '-',
+           (st.mode & M_WRITE) ? 'w' : '-',
+           fmtname(path), target, st.type, st.ino, (int) st.size);
+    break;
+
   case T_DEVICE:
   case T_FILE:
-    printf("%s %d %d %d\n", fmtname(path), st.type, st.ino, (int) st.size);
+    printf("%c%c %s %d %d %d\n",
+           (st.mode & M_READ) ? 'r' : '-',
+           (st.mode & M_WRITE) ? 'w' : '-',
+           fmtname(path), st.type, st.ino, (int) st.size);
     break;
 
   case T_DIR:
@@ -62,11 +76,33 @@ ls(char *path)
         continue;
       memmove(p, de.name, DIRSIZ);
       p[DIRSIZ] = 0;
-      if(stat(buf, &st) < 0){
-        printf("ls: cannot stat %s\n", buf);
+      
+      // Use open/fstat with O_NOFOLLOW instead of stat
+      int subfd;
+      if((subfd = open(buf, O_RDONLY | O_NOFOLLOW)) < 0){
+        printf("ls: cannot open %s\n", buf);
         continue;
       }
-      printf("%s %d %d %d\n", fmtname(buf), st.type, st.ino, (int) st.size);
+      if(fstat(subfd, &st) < 0){
+        printf("ls: cannot stat %s\n", buf);
+        close(subfd);
+        continue;
+      }
+
+      if(st.type == T_SYMLINK){
+        n = read(subfd, target, sizeof(target)-1);
+        if(n > 0) target[n] = 0; else target[0] = 0;
+        printf("%c%c %s -> %s %d %d %d\n",
+               (st.mode & M_READ) ? 'r' : '-',
+               (st.mode & M_WRITE) ? 'w' : '-',
+               fmtname(buf), target, st.type, st.ino, (int) st.size);
+      } else {
+        printf("%c%c %s %d %d %d\n",
+               (st.mode & M_READ) ? 'r' : '-',
+               (st.mode & M_WRITE) ? 'w' : '-',
+               fmtname(buf), st.type, st.ino, (int) st.size);
+      }
+      close(subfd);
     }
     break;
   }

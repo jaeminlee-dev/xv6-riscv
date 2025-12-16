@@ -126,6 +126,11 @@ main(int argc, char *argv[])
   de.inum = xshort(rootino);
   strcpy(de.name, "..");
   iappend(rootino, &de, sizeof(de));
+  
+  // Fix root mode
+  rinode(rootino, &din);
+  din.mode = xshort(M_READ | M_WRITE);
+  winode(rootino, &din);
 
   for(i = 2; i < argc; i++){
     // get rid of "user/"
@@ -144,8 +149,11 @@ main(int argc, char *argv[])
     // The binaries are named _rm, _cat, etc. to keep the
     // build operating system from trying to execute them
     // in place of system binaries like rm and cat.
-    if(shortname[0] == '_')
+    int mode = M_READ | M_WRITE;
+    if(shortname[0] == '_'){
       shortname += 1;
+      mode = M_READ;
+    }
 
     assert(strlen(shortname) <= DIRSIZ);
     
@@ -160,6 +168,11 @@ main(int argc, char *argv[])
       iappend(inum, buf, cc);
 
     close(fd);
+    
+    // Set file mode
+    rinode(inum, &din);
+    din.mode = xshort(mode);
+    winode(inum, &din);
   }
 
   // fix size of root inode dir
@@ -229,6 +242,7 @@ ialloc(ushort type)
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
+  din.mode = xshort(0);
   winode(inum, &din);
   return inum;
 }

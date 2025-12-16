@@ -124,6 +124,7 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 
 UPROGS=\
 	$U/_cat\
+	$U/_chmod\
 	$U/_echo\
 	$U/_forktest\
 	$U/_grep\
@@ -162,8 +163,11 @@ GDBPORT = $(shell expr `id -u` % 5000 + 25000)
 QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	then echo "-gdb tcp::$(GDBPORT)"; \
 	else echo "-s -p $(GDBPORT)"; fi)
+ASSIGNMENTNO = 4
+STUDENTNO = 20231685
+
 ifndef CPUS
-CPUS := 3
+CPUS := 1
 endif
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic

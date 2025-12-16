@@ -287,6 +287,10 @@ create(char *path, short type, short major, short minor)
     dp->nlink++;  // for ".."
     iupdate(dp);
   }
+  
+  // Set default permissions
+  ip->mode = M_READ | M_WRITE;
+  iupdate(ip);
 
   iunlockput(dp);
 
@@ -302,6 +306,32 @@ create(char *path, short type, short major, short minor)
 }
 
 uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+  
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+  
+  begin_op();
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
+    end_op();
+    return -1;
+  }
+  
+  if(writei(ip, 0, (uint64)target, 0, strlen(target)) != strlen(target)){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+
+uint64
 sys_open(void)
 {
   char path[MAXPATH];
@@ -309,6 +339,7 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
+  int depth = 0;
 
   argint(1, &omode);
   if((n = argstr(0, path, MAXPATH)) < 0)
@@ -323,11 +354,32 @@ sys_open(void)
       return -1;
     }
   } else {
-    if((ip = namei(path)) == 0){
-      end_op();
-      return -1;
+    while(1){
+      if((ip = namei(path)) == 0){
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+      
+      if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+        if(depth >= 3){ // Depth limit 3
+           iunlockput(ip);
+           end_op();
+           return -1;
+        }
+        // Read target from symlink
+        if(readi(ip, 0, (uint64)path, 0, MAXPATH) <= 0){
+           iunlockput(ip);
+           end_op();
+           return -1;
+        }
+        iunlockput(ip);
+        depth++;
+        continue; // Loop to resolve new path
+      }
+      break;
     }
-    ilock(ip);
+  
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -339,6 +391,24 @@ sys_open(void)
     iunlockput(ip);
     end_op();
     return -1;
+  }
+  
+  // Check permissions
+  if((omode & O_WRONLY) || (omode & O_RDWR)){
+      if((ip->mode & M_WRITE) == 0){
+          iunlockput(ip);
+          end_op();
+          return -1;
+      }
+  }
+  if(!(omode & O_WRONLY)){ // Readable
+      // O_RDONLY or O_RDWR.
+      // O_RDONLY is 0.
+      if((ip->mode & M_READ) == 0){
+          iunlockput(ip);
+          end_op();
+          return -1;
+      }
   }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
@@ -368,6 +438,32 @@ sys_open(void)
   end_op();
 
   return fd;
+}
+
+uint64
+sys_chmod(void)
+{
+  char path[MAXPATH];
+  struct inode *ip;
+  int mode;
+  
+  if(argstr(0, path, MAXPATH) < 0)
+    return -1;
+  argint(1, &mode);
+    
+  begin_op();
+  if((ip = namei(path)) == 0){
+    end_op();
+    return -1;
+  }
+  
+  ilock(ip);
+  ip->mode = mode;
+  iupdate(ip);
+  iunlockput(ip);
+  end_op();
+  
+  return 0;
 }
 
 uint64
